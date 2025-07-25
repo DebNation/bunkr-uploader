@@ -15,6 +15,8 @@ use std::{
 };
 use uuid::Uuid;
 
+mod utils;
+
 #[tokio::main]
 async fn main() {
     let home = env::var("HOME").expect("HOME is not set");
@@ -22,8 +24,6 @@ async fn main() {
     let _ = fs::create_dir_all(&token_dir).expect("failed to create directory");
 
     let token_file_path = format!("{}/token.txt", &token_dir);
-    //TODO: handle upload url automatically
-    let upload_url = "https://n33.bunkr.ru/api/upload";
     let chunks_folder = format!("{}/chunks", token_dir);
     std::fs::create_dir_all(&chunks_folder).unwrap();
     let token = match fs::read_to_string(&token_file_path) {
@@ -48,6 +48,18 @@ async fn main() {
     if !fs::exists(&args[1]).unwrap() {
         panic!("File/Folder is not found");
     }
+
+    let upload_url: String = match utils::get_data(&token).await {
+        Ok(data) => {
+            let url: String = data["url"].to_string();
+            url
+        }
+
+        Err(e) => {
+            println!("Error: {}", e);
+            return;
+        }
+    };
 
     println!("Add to your album ? y/n");
 
@@ -132,7 +144,7 @@ fn make_file_chunks(file: &PathBuf, chunks_folder: &str, chunk_size: u32) -> u8 
 
 async fn upload_file(
     chunks_folder: &str,
-    upload_url: &str,
+    upload_url: String,
     token: String,
     uuid: &str,
     file_info: (String, u32, String),
@@ -178,7 +190,7 @@ async fn upload_file(
             .text("dzchunkbyteoffset", byte_offset.to_string())
             .part("files[]", file_part);
         let request = client
-            .post(upload_url)
+            .post(&upload_url)
             .header("token", HeaderValue::from_str(&token)?);
         let request_with_form = request.multipart(form);
         let res = match request_with_form.send().await {
