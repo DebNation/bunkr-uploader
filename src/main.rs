@@ -1,24 +1,28 @@
+use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
 use reqwest::header::HeaderValue;
 use reqwest::multipart::{Form, Part};
+use std::cmp::min;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{
     env,
     fs::{self},
-    io::{self, Write},
+    io::{self},
 };
 use uuid::Uuid;
+
 #[tokio::main]
 async fn main() {
-    let home = env::var("HOME").expect("HOME not set");
+    let home = env::var("HOME").expect("HOME is not set");
     let token_dir = format!("{}/.local/share/bunkr-uploader", home);
     let _ = fs::create_dir_all(&token_dir).expect("failed to create directory");
 
     let token_file_path = format!("{}/token.txt", &token_dir);
+    //TODO: handle upload url automatically
     let upload_url = "https://n33.bunkr.ru/api/upload";
     let chunks_folder = format!("{}/chunks", token_dir);
     std::fs::create_dir_all(&chunks_folder).unwrap();
@@ -45,16 +49,21 @@ async fn main() {
         panic!("File/Folder is not found");
     }
 
-    println!("Enter album id:");
+    println!("Add to your album ? y/n");
+
+    let mut upload_to_album: String = String::new();
+    io::stdin().read_line(&mut upload_to_album).unwrap();
+
     let mut album_id: String = String::new();
-    io::stdin().read_line(&mut album_id).unwrap();
+    if upload_to_album.trim() == "y" || upload_to_album.trim() == "Y" {
+        println!("Enter album id:");
+        io::stdin().read_line(&mut album_id).unwrap();
+    }
     let current_dir = env::current_dir().unwrap();
     let full_path = current_dir.join(&args[1]);
     let file_info = get_file_info(&full_path);
     let uuid = Uuid::new_v4();
     let uuid_str = uuid.to_string();
-
-    // println!("{:?}", file_info);
 
     let chunk_size: u32 = 25 * 1000 * 1000;
     let total_chunks: u8 = make_file_chunks(&full_path, &chunks_folder, chunk_size);
@@ -131,32 +140,26 @@ async fn upload_file(
     chunk_size: u32,
     album_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(30)) // 30 second timeout
-        .build()?;
-
-    println!("Starting upload from folder: {}", chunks_folder);
-    println!("Total chunks to upload: {}", total_chunks);
+    let client = Client::new();
+    let mut uploaded = 0;
+    let total_size = file_info.1;
+    let pb = ProgressBar::new(total_size.into());
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{msg} [{bar:80.green/black}] {bytes}/{total_bytes} {percent}%")
+            .unwrap()
+            .progress_chars("=>-"),
+    );
+    pb.set_message(format!("{}", file_info.0));
 
     for chunk_index in 0..total_chunks {
         let chunk_filename = format!("chunk_{}", chunk_index);
-        let chunk_path = PathBuf::from(chunks_folder).join(&chunk_filename);
-
-        println!("Processing chunk {}: {:?}", chunk_index, chunk_path);
-
-        // Check if file exists
-        if !chunk_path.exists() {
+        let chunk_index_path = PathBuf::from(chunks_folder).join(&chunk_filename);
+        if !chunk_index_path.exists() {
             println!("✗ Chunk file {} does not exist, skipping", chunk_filename);
             continue;
         }
-
-        if !chunk_path.is_file() {
-            println!("✗ {} is not a file, skipping", chunk_filename);
-            continue;
-        }
-
-        // Read file contents
-        let file_contents = match fs::read(&chunk_path) {
+        let file_contents = match fs::read(&chunk_index_path) {
             Ok(contents) => contents,
             Err(e) => {
                 println!("✗ Failed to read {}: {}", chunk_filename, e);
@@ -165,24 +168,7 @@ async fn upload_file(
         };
 
         let byte_offset = chunk_index as u64 * chunk_size as u64;
-
-        let actual_size = file_contents.len();
-        println!("Read {} bytes from chunk {}", actual_size, chunk_index);
-
-        // println!("Building form with:");
-        //
-        // println!("  dzuuid: {}", uuid);
-        // println!("  dzchunkindex: {}", chunk_index);
-        // println!("  dztotalfilesize: {}", file_info.1);
-        // println!("  dzchunksize: {}", chunk_size);
-        // println!("  dztotalchunkcount: {}", total_chunks);
-        // println!("  dzchunkbyteoffset: {}", byte_offset);
-        // println!("  files[]: {} ({} bytes)", chunk_filename, actual_size);
-
         let file_part = Part::bytes(file_contents).file_name(chunk_filename.clone());
-
-        println!("Created file part successfully");
-
         let form = Form::new()
             .text("dzuuid", uuid.to_string())
             .text("dzchunkindex", chunk_index.to_string())
@@ -191,37 +177,16 @@ async fn upload_file(
             .text("dztotalchunkcount", total_chunks.to_string())
             .text("dzchunkbyteoffset", byte_offset.to_string())
             .part("files[]", file_part);
-
-        println!("Form created successfully");
-
-        println!("Uploading chunk {} to {}", chunk_index, upload_url);
-        // println!("Token: {}", token);
-        println!("Building request...");
-
         let request = client
             .post(upload_url)
             .header("token", HeaderValue::from_str(&token)?);
-
-        println!("Request built successfully");
-
-        println!("Adding multipart form...");
         let request_with_form = request.multipart(form);
-
-        println!("Starting HTTP request...");
-
-        let start_time = std::time::Instant::now();
-
         let res = match request_with_form.send().await {
-            Ok(response) => {
-                let elapsed = start_time.elapsed();
-                println!("✓ Got response after {:?}", elapsed);
-                response
-            }
+            Ok(response) => response,
             Err(e) => {
-                let elapsed = start_time.elapsed();
                 println!(
-                    "✗ Network error after {:?} uploading chunk {}: {}",
-                    elapsed, chunk_index, e
+                    "✗ Network error while uploading chunk {}: {}",
+                    chunk_index, e
                 );
                 continue;
             }
@@ -239,14 +204,18 @@ async fn upload_file(
             );
             continue;
         }
-
-        println!("✓ Successfully uploaded chunk {}", chunk_index);
+        let new = min(uploaded + chunk_size, file_info.1);
+        uploaded = new;
+        pb.set_position(new.into());
     }
+
     let mut map: HashMap<&str, String> = HashMap::new();
     map.insert("uuid", uuid.to_string());
     map.insert("original", file_info.0.to_string());
     map.insert("type", file_info.2.to_string());
-    map.insert("albumid", album_id);
+    if !album_id.is_empty() {
+        map.insert("albumid", album_id);
+    }
     map.insert("age", "null".to_string());
     map.insert("filelength", "null".to_string());
     let finish_chunk_endpoint = format!("{}/finishchunks", upload_url);
@@ -254,7 +223,6 @@ async fn upload_file(
     let mut final_payload = HashMap::new();
     final_payload.insert("files", [map]);
 
-    println!("{:?}", final_payload);
     let rebuild_file_res = client
         .post(&finish_chunk_endpoint)
         .header("token", HeaderValue::from_str(&token)?)
@@ -262,14 +230,13 @@ async fn upload_file(
         .send()
         .await
         .unwrap();
-    println!("{:?}", rebuild_file_res);
     if !rebuild_file_res.status().is_success() {
         eprintln!("{:?}", rebuild_file_res);
     }
     let res_body = rebuild_file_res.text().await.unwrap();
     println!("{}", res_body);
 
-    println!("Completed upload process");
+    println!("Upload Done");
     fs::remove_dir_all(chunks_folder).unwrap();
     Ok(())
 }
