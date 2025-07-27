@@ -14,8 +14,21 @@ use std::{
     io::{self},
 };
 use uuid::Uuid;
-
 mod utils;
+use colored::*;
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+pub struct FinalResponse {
+    pub success: bool,
+    pub files: Vec<Files>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Files {
+    pub name: String,
+    pub url: String,
+}
 
 #[tokio::main]
 async fn main() {
@@ -26,9 +39,25 @@ async fn main() {
     let token_file_path = format!("{}/token.txt", &token_dir);
     let chunks_folder = format!("{}/chunks", token_dir);
     std::fs::create_dir_all(&chunks_folder).unwrap();
-    let mut token = String::new();
+    let mut token: String = String::new();
     match fs::read_to_string(&token_file_path) {
-        Ok(content) => content.trim().to_string(),
+        Ok(content) => {
+            let is_token_verified: bool = match utils::verify_token(&content).await {
+                Ok(data) => {
+                    let is_verified: bool = data["success"].to_string().parse().unwrap();
+                    is_verified
+                }
+                Err(e) => {
+                    eprintln!("{:?}", e);
+                    false
+                }
+            };
+            if !is_token_verified {
+                eprintln!("Token is invalid");
+            }
+            token = content;
+            token.to_string()
+        }
 
         Err(_) => {
             while token.is_empty() {
@@ -58,7 +87,7 @@ async fn main() {
                 }
 
                 let _ = fs::write(&token_file_path, trimmed_token);
-                token = trimmed_token.to_string();
+                token = trimmed_token.to_string().parse().unwrap();
             }
             token.to_string()
         }
@@ -71,8 +100,9 @@ async fn main() {
 
     let upload_url: String = match utils::get_data(&token).await {
         Ok(data) => {
-            let url: String = data["url"].to_string();
-            url
+            let url: String = data["url"].to_string().parse().unwrap();
+            let clean_url = url.trim_matches('"');
+            clean_url.to_owned()
         }
 
         Err(e) => {
@@ -88,8 +118,23 @@ async fn main() {
 
     let mut album_id: String = String::new();
     if upload_to_album.trim() == "y" || upload_to_album.trim() == "Y" {
-        println!("Enter album id:");
-        io::stdin().read_line(&mut album_id).unwrap();
+        match utils::get_albums(&token).await {
+            Ok(data) => {
+                let labels: Vec<String> = data
+                    .albums
+                    .iter()
+                    .map(|album| format!("{} (id: {})", album.name, album.id))
+                    .collect();
+                let selection = dialoguer::Select::new()
+                    .with_prompt("Select an Album")
+                    .items(&labels)
+                    .default(0)
+                    .interact()
+                    .unwrap();
+                album_id = data.albums[selection].id.to_string();
+            }
+            Err(err) => eprintln!("Error getting albums{}", err),
+        };
     }
     let current_dir = env::current_dir().unwrap();
     let full_path = current_dir.join(&args[1]);
@@ -98,8 +143,19 @@ async fn main() {
     let uuid_str = uuid.to_string();
 
     let chunk_size: u32 = 25 * 1000 * 1000;
+    if file_info.1 < chunk_size {
+        let _ = upload_file(
+            upload_url.to_owned(),
+            token.to_owned(),
+            file_info.to_owned(),
+            album_id.to_owned(),
+            full_path.to_owned(),
+        )
+        .await;
+        return;
+    }
     let total_chunks: u8 = make_file_chunks(&full_path, &chunks_folder, chunk_size);
-    let _ = upload_file(
+    let _ = upload_file_chunks(
         &chunks_folder,
         upload_url,
         token,
@@ -162,7 +218,7 @@ fn make_file_chunks(file: &PathBuf, chunks_folder: &str, chunk_size: u32) -> u8 
     return chunk_index;
 }
 
-async fn upload_file(
+async fn upload_file_chunks(
     chunks_folder: &str,
     upload_url: String,
     token: String,
@@ -178,7 +234,7 @@ async fn upload_file(
     let pb = ProgressBar::new(total_size.into());
     pb.set_style(
         ProgressStyle::default_bar()
-            .template("{msg} [{bar:80.green/black}] {bytes}/{total_bytes} {percent}%")
+            .template("{msg} [{bar:40.green/black}] {bytes}/{total_bytes} {percent}%")
             .unwrap()
             .progress_chars("=>-"),
     );
@@ -201,6 +257,7 @@ async fn upload_file(
 
         let byte_offset = chunk_index as u64 * chunk_size as u64;
         let file_part = Part::bytes(file_contents).file_name(chunk_filename.clone());
+
         let form = Form::new()
             .text("dzuuid", uuid.to_string())
             .text("dzchunkindex", chunk_index.to_string())
@@ -209,6 +266,7 @@ async fn upload_file(
             .text("dztotalchunkcount", total_chunks.to_string())
             .text("dzchunkbyteoffset", byte_offset.to_string())
             .part("files[]", file_part);
+
         let request = client
             .post(&upload_url)
             .header("token", HeaderValue::from_str(&token)?);
@@ -263,12 +321,57 @@ async fn upload_file(
         .await
         .unwrap();
     if !rebuild_file_res.status().is_success() {
-        eprintln!("{:?}", rebuild_file_res);
+        eprintln!("Failed to Upload the file, {:?}", rebuild_file_res);
     }
     let res_body = rebuild_file_res.text().await.unwrap();
-    println!("{}", res_body);
 
-    println!("Upload Done");
+    let data: FinalResponse = serde_json::from_str(&res_body)?;
+    if !data.success {
+        eprintln!("Failed to upload: {:?}", data);
+    }
+    println!("{}", data.files[0].url.yellow().bold());
+    println!("{}", "Upload done".green());
+
     fs::remove_dir_all(chunks_folder).unwrap();
+    Ok(())
+}
+
+async fn upload_file(
+    upload_url: String,
+    token: String,
+    file_info: (String, u32, String),
+    album_id: String,
+    full_path: PathBuf,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let client = Client::new();
+    let file_contents = match fs::read(&full_path) {
+        Ok(contents) => contents,
+        Err(e) => {
+            println!("✗ Failed to read {}", e);
+            Err(e)?
+        }
+    };
+
+    let file_part = Part::bytes(file_contents).file_name(file_info.0);
+    let form = Form::new().part("files[]", file_part);
+
+    let request = client
+        .post(&upload_url)
+        .header("token", HeaderValue::from_str(&token)?)
+        .header("albumid", HeaderValue::from_str(&album_id)?);
+    let request_with_form = request.multipart(form);
+    let res = match request_with_form.send().await {
+        Ok(response) => response,
+        Err(e) => {
+            println!("✗ Network error while uploading chunk : {}", e);
+            Err(e)?
+        }
+    };
+    let json_data: FinalResponse = serde_json::from_str(&res.text().await.unwrap())?;
+    if !json_data.success {
+        eprintln!("Failed to upload: {:?}", json_data);
+    }
+    println!("Upload URL: {}", json_data.files[0].url.yellow().bold());
+    println!("{}", "Upload done".green());
     Ok(())
 }
