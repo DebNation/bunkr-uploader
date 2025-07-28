@@ -5,7 +5,8 @@ use reqwest::multipart::{Form, Part};
 use std::cmp::min;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, Read, Write};
+use std::io::{BufReader, ErrorKind, Read, Write};
+use std::panic;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{
@@ -97,6 +98,30 @@ async fn main() {
     if !fs::exists(&args[1]).unwrap() {
         panic!("File/Folder is not found");
     }
+    let mut files_paths: Vec<PathBuf> = vec![];
+    match fs::read_dir(&args[1]) {
+        Ok(entries) => {
+            for entry in entries {
+                match entry {
+                    Ok(entry) => {
+                        let file_path = entry.path();
+                        files_paths.push(file_path.to_owned());
+                    }
+                    Err(e) => {
+                        panic!("{}", e);
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            if e.kind() == ErrorKind::NotADirectory {
+                files_paths.push(args[1].to_owned().into());
+            } else {
+                panic!("{}", e);
+            }
+        }
+    }
+    println!("{:?}", files_paths);
 
     let upload_url: String = match utils::get_data(&token).await {
         Ok(data) => {
@@ -136,36 +161,39 @@ async fn main() {
             Err(err) => eprintln!("Error getting albums{}", err),
         };
     }
-    let current_dir = env::current_dir().unwrap();
-    let full_path = current_dir.join(&args[1]);
-    let file_info = get_file_info(&full_path);
-    let uuid = Uuid::new_v4();
-    let uuid_str = uuid.to_string();
+    for file_path in files_paths {
+        let current_dir = env::current_dir().unwrap();
+        let absolute_file_path = current_dir.join(&file_path);
 
-    let chunk_size: u32 = 25 * 1000 * 1000;
-    if file_info.1 < chunk_size {
-        let _ = upload_file(
-            upload_url.to_owned(),
-            token.to_owned(),
-            file_info.to_owned(),
-            album_id.to_owned(),
-            full_path.to_owned(),
+        let file_info = get_file_info(&file_path);
+        let uuid = Uuid::new_v4();
+        let uuid_str = uuid.to_string();
+
+        let chunk_size: u32 = 25 * 1000 * 1000;
+        if file_info.1 < chunk_size {
+            let _ = upload_file(
+                upload_url.to_owned(),
+                token.to_owned(),
+                file_info.to_owned(),
+                album_id.to_owned(),
+                absolute_file_path.to_owned(),
+            )
+            .await;
+            return;
+        }
+        let total_chunks: u8 = make_file_chunks(&absolute_file_path, &chunks_folder, chunk_size);
+        let _ = upload_big_file(
+            &chunks_folder,
+            &upload_url,
+            &token,
+            &uuid_str,
+            file_info,
+            total_chunks,
+            chunk_size,
+            &album_id,
         )
         .await;
-        return;
     }
-    let total_chunks: u8 = make_file_chunks(&full_path, &chunks_folder, chunk_size);
-    let _ = upload_file_chunks(
-        &chunks_folder,
-        upload_url,
-        token,
-        &uuid_str,
-        file_info,
-        total_chunks,
-        chunk_size,
-        album_id,
-    )
-    .await;
 }
 
 fn get_file_info(file_path: &PathBuf) -> (String, u32, String) {
@@ -218,15 +246,15 @@ fn make_file_chunks(file: &PathBuf, chunks_folder: &str, chunk_size: u32) -> u8 
     return chunk_index;
 }
 
-async fn upload_file_chunks(
+async fn upload_big_file(
     chunks_folder: &str,
-    upload_url: String,
-    token: String,
+    upload_url: &str,
+    token: &str,
     uuid: &str,
     file_info: (String, u32, String),
     total_chunks: u8,
     chunk_size: u32,
-    album_id: String,
+    album_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
     let mut uploaded = 0;
@@ -268,7 +296,7 @@ async fn upload_file_chunks(
             .part("files[]", file_part);
 
         let request = client
-            .post(&upload_url)
+            .post(upload_url)
             .header("token", HeaderValue::from_str(&token)?);
         let request_with_form = request.multipart(form);
         let res = match request_with_form.send().await {
@@ -297,6 +325,7 @@ async fn upload_file_chunks(
         let new = min(uploaded + chunk_size, file_info.1);
         uploaded = new;
         pb.set_position(new.into());
+        fs::remove_file(chunk_index_path).unwrap();
     }
 
     let mut map: HashMap<&str, String> = HashMap::new();
@@ -304,7 +333,7 @@ async fn upload_file_chunks(
     map.insert("original", file_info.0.to_string());
     map.insert("type", file_info.2.to_string());
     if !album_id.is_empty() {
-        map.insert("albumid", album_id);
+        map.insert("albumid", album_id.to_string());
     }
     map.insert("age", "null".to_string());
     map.insert("filelength", "null".to_string());
@@ -332,7 +361,10 @@ async fn upload_file_chunks(
     println!("{}", data.files[0].url.yellow().bold());
     println!("{}", "Upload done".green());
 
-    fs::remove_dir_all(chunks_folder).unwrap();
+    // fs::remove_dir_all(chunks_folder).unwrap();
+    // fs::remove_file(chunk_index_path);
+    // let chunk_index_path = PathBuf::from(chunks_folder).join(&chunk_filename);
+    // println!("clearing chunks folder");
     Ok(())
 }
 

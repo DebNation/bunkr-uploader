@@ -1,5 +1,6 @@
 use std::{collections::HashMap, error::Error};
 
+use colored::Colorize;
 use serde::Deserialize;
 
 use reqwest::Client;
@@ -37,7 +38,7 @@ pub async fn verify_token(token: &str) -> Result<Value, Box<dyn std::error::Erro
 
 #[derive(Debug, Deserialize)]
 pub struct AlbumResponse {
-    pub success: bool,
+    // pub success: bool,
     pub albums: Vec<Album>,
 }
 
@@ -45,10 +46,11 @@ pub struct AlbumResponse {
 pub struct Album {
     pub id: u32,
     pub name: String,
-    pub identifier: String,
+    // pub identifier: String,
 }
 
 pub async fn get_albums(token: &str) -> Result<AlbumResponse, Box<dyn Error>> {
+    println!("{}", "Fetching Albums...".green());
     let client = Client::new();
     let response = client
         .get("https://dash.bunkr.cr/api/albums")
