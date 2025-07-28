@@ -6,7 +6,6 @@ use std::cmp::min;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, ErrorKind, Read, Write};
-use std::panic;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{
@@ -14,6 +13,7 @@ use std::{
     fs::{self},
     io::{self},
 };
+use std::{panic, vec};
 use uuid::Uuid;
 mod utils;
 use colored::*;
@@ -161,6 +161,7 @@ async fn main() {
             Err(err) => eprintln!("Error getting albums{}", err),
         };
     }
+    let mut uploads_direct_urls: Vec<String> = vec![];
     for file_path in files_paths {
         let current_dir = env::current_dir().unwrap();
         let absolute_file_path = current_dir.join(&file_path);
@@ -177,6 +178,7 @@ async fn main() {
                 file_info.to_owned(),
                 album_id.to_owned(),
                 absolute_file_path.to_owned(),
+                &mut uploads_direct_urls,
             )
             .await;
             return;
@@ -191,9 +193,11 @@ async fn main() {
             total_chunks,
             chunk_size,
             &album_id,
+            &mut uploads_direct_urls,
         )
         .await;
     }
+    println!("{:?}", uploads_direct_urls)
 }
 
 fn get_file_info(file_path: &PathBuf) -> (String, u32, String) {
@@ -255,6 +259,7 @@ async fn upload_big_file(
     total_chunks: u8,
     chunk_size: u32,
     album_id: &str,
+    uploads_direct_urls: &mut Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
     let mut uploaded = 0;
@@ -358,13 +363,10 @@ async fn upload_big_file(
     if !data.success {
         eprintln!("Failed to upload: {:?}", data);
     }
-    println!("{}", data.files[0].url.yellow().bold());
+    // println!("{}", data.files[0].url.yellow().bold());
+    uploads_direct_urls.push(data.files[0].url.to_string());
     println!("{}", "Upload done".green());
 
-    // fs::remove_dir_all(chunks_folder).unwrap();
-    // fs::remove_file(chunk_index_path);
-    // let chunk_index_path = PathBuf::from(chunks_folder).join(&chunk_filename);
-    // println!("clearing chunks folder");
     Ok(())
 }
 
@@ -374,6 +376,7 @@ async fn upload_file(
     file_info: (String, u32, String),
     album_id: String,
     full_path: PathBuf,
+    uploads_direct_urls: &mut Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
     let file_contents = match fs::read(&full_path) {
@@ -403,7 +406,9 @@ async fn upload_file(
     if !json_data.success {
         eprintln!("Failed to upload: {:?}", json_data);
     }
-    println!("Upload URL: {}", json_data.files[0].url.yellow().bold());
+    // println!("Upload URL: {}", json_data.files[0].url.yellow().bold());
+
+    uploads_direct_urls.push(json_data.files[0].url.to_string());
     println!("{}", "Upload done".green());
     Ok(())
 }
