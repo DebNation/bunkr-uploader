@@ -16,6 +16,7 @@ use std::{
 use std::{panic, vec};
 use uuid::Uuid;
 mod utils;
+use clap::Parser;
 use colored::*;
 use serde::Deserialize;
 
@@ -29,6 +30,18 @@ pub struct FinalResponse {
 pub struct Files {
     pub name: String,
     pub url: String,
+}
+
+pub struct FileInfo {
+    pub name: String,
+    pub size: u64,
+    pub mime_type: String,
+}
+
+#[derive(Parser)]
+pub struct Args {
+    #[arg(short = 'u', long = "upload")]
+    upload: String,
 }
 
 #[tokio::main]
@@ -94,12 +107,9 @@ async fn main() {
         }
     };
 
-    let args: Vec<String> = env::args().collect();
-    if !fs::exists(&args[1]).unwrap() {
-        panic!("File/Folder is not found");
-    }
+    let path = Args::parse().upload;
     let mut files_paths: Vec<PathBuf> = vec![];
-    match fs::read_dir(&args[1]) {
+    match fs::read_dir(&path) {
         Ok(entries) => {
             for entry in entries {
                 match entry {
@@ -115,7 +125,7 @@ async fn main() {
         }
         Err(e) => {
             if e.kind() == ErrorKind::NotADirectory {
-                files_paths.push(args[1].to_owned().into());
+                files_paths.push(path.into());
             } else {
                 panic!("{}", e);
             }
@@ -142,7 +152,10 @@ async fn main() {
     io::stdin().read_line(&mut upload_to_album).unwrap();
 
     let mut album_id: String = String::new();
-    if upload_to_album.trim() == "y" || upload_to_album.trim() == "Y" {
+    if upload_to_album.trim() == "y"
+        || upload_to_album.trim() == "Y"
+        || upload_to_album.trim() == ""
+    {
         match utils::get_albums(&token).await {
             Ok(data) => {
                 let labels: Vec<String> = data
@@ -168,7 +181,7 @@ async fn main() {
 
         let file_info = get_file_info(&file_path);
 
-        if file_info.1 > 20 * 1000 * 1000 * 1000 {
+        if file_info.size > 20 * 1000 * 1000 * 1000 {
             eprintln!("Your file size is more than 2GB");
             continue;
         }
@@ -176,49 +189,52 @@ async fn main() {
         let uuid_str = uuid.to_string();
 
         let chunk_size: u64 = 25 * 1000 * 1000;
-        if file_info.1 < chunk_size {
+        if file_info.size < chunk_size {
             let _ = upload_file(
                 upload_url.to_owned(),
                 token.to_owned(),
-                file_info.to_owned(),
+                file_info,
                 album_id.to_owned(),
                 absolute_file_path.to_owned(),
                 &mut uploads_direct_urls,
             )
             .await;
-            return;
+        } else {
+            let total_chunks: u8 =
+                make_file_chunks(&absolute_file_path, &chunks_folder, chunk_size);
+            let _ = upload_big_file(
+                &chunks_folder,
+                &upload_url,
+                &token,
+                &uuid_str,
+                file_info,
+                total_chunks,
+                chunk_size,
+                &album_id,
+                &mut uploads_direct_urls,
+            )
+            .await;
         }
-        let total_chunks: u8 = make_file_chunks(&absolute_file_path, &chunks_folder, chunk_size);
-        let _ = upload_big_file(
-            &chunks_folder,
-            &upload_url,
-            &token,
-            &uuid_str,
-            file_info,
-            total_chunks,
-            chunk_size,
-            &album_id,
-            &mut uploads_direct_urls,
-        )
-        .await;
     }
-    println!("{:?}", uploads_direct_urls)
+    for (index, url) in uploads_direct_urls.iter().enumerate() {
+        println!("{}: {}", index + 1, url.yellow());
+    }
 }
 
-fn get_file_info(file_path: &PathBuf) -> (String, u64, String) {
+fn get_file_info(file_path: &PathBuf) -> FileInfo {
     let basename = Command::new("basename")
         .arg(&file_path)
         .output()
         .expect("basename command failed to start");
-    let str_basename = str::from_utf8(&basename.stdout).unwrap().trim();
+    let name = str::from_utf8(&basename.stdout).unwrap().trim().to_string();
 
-    let size = Command::new("stat")
+    let get_size = Command::new("stat")
         .arg("-c%s")
         .arg(&file_path)
         .output()
         .expect("size command failed to start");
-    let str_size = str::from_utf8(&size.stdout).unwrap().trim();
-    let int_size: u64 = str_size.parse().unwrap();
+    let str_size = str::from_utf8(&get_size.stdout).unwrap().trim();
+    let size: u64 = str_size.parse().unwrap();
 
     let mimetype_stdout = Command::new("file")
         .arg("--mime-type")
@@ -231,7 +247,11 @@ fn get_file_info(file_path: &PathBuf) -> (String, u64, String) {
         .trim()
         .to_string();
 
-    return (str_basename.to_string(), int_size, mime_type);
+    FileInfo {
+        name,
+        size,
+        mime_type,
+    }
 }
 
 fn make_file_chunks(file: &PathBuf, chunks_folder: &str, chunk_size: u64) -> u8 {
@@ -260,7 +280,7 @@ async fn upload_big_file(
     upload_url: &str,
     token: &str,
     uuid: &str,
-    file_info: (String, u64, String),
+    file_info: FileInfo,
     total_chunks: u8,
     chunk_size: u64,
     album_id: &str,
@@ -268,7 +288,7 @@ async fn upload_big_file(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
     let mut uploaded = 0;
-    let total_size = file_info.1;
+    let total_size = file_info.size;
     let pb = ProgressBar::new(total_size.into());
     pb.set_style(
         ProgressStyle::default_bar()
@@ -276,7 +296,7 @@ async fn upload_big_file(
             .unwrap()
             .progress_chars("=>-"),
     );
-    pb.set_message(format!("{}", file_info.0));
+    pb.set_message(format!("{}", file_info.name));
 
     for chunk_index in 0..total_chunks {
         let chunk_filename = format!("chunk_{}", chunk_index);
@@ -299,7 +319,7 @@ async fn upload_big_file(
         let form = Form::new()
             .text("dzuuid", uuid.to_string())
             .text("dzchunkindex", chunk_index.to_string())
-            .text("dztotalfilesize", file_info.1.to_string())
+            .text("dztotalfilesize", file_info.size.to_string())
             .text("dzchunksize", chunk_size.to_string())
             .text("dztotalchunkcount", total_chunks.to_string())
             .text("dzchunkbyteoffset", byte_offset.to_string())
@@ -332,7 +352,7 @@ async fn upload_big_file(
             );
             continue;
         }
-        let new = min(uploaded + chunk_size, file_info.1);
+        let new = min(uploaded + chunk_size, file_info.size);
         uploaded = new;
         pb.set_position(new.into());
         fs::remove_file(chunk_index_path).unwrap();
@@ -340,8 +360,8 @@ async fn upload_big_file(
 
     let mut map: HashMap<&str, String> = HashMap::new();
     map.insert("uuid", uuid.to_string());
-    map.insert("original", file_info.0.to_string());
-    map.insert("type", file_info.2.to_string());
+    map.insert("original", file_info.name.to_string());
+    map.insert("type", file_info.mime_type.to_string());
     if !album_id.is_empty() {
         map.insert("albumid", album_id.to_string());
     }
@@ -370,7 +390,6 @@ async fn upload_big_file(
     }
     // println!("{}", data.files[0].url.yellow().bold());
     uploads_direct_urls.push(data.files[0].url.to_string());
-    println!("{}", "Upload done".green());
 
     Ok(())
 }
@@ -378,7 +397,7 @@ async fn upload_big_file(
 async fn upload_file(
     upload_url: String,
     token: String,
-    file_info: (String, u64, String),
+    file_info: FileInfo,
     album_id: String,
     full_path: PathBuf,
     uploads_direct_urls: &mut Vec<String>,
@@ -392,7 +411,7 @@ async fn upload_file(
         }
     };
 
-    let file_part = Part::bytes(file_contents).file_name(file_info.0);
+    let file_part = Part::bytes(file_contents).file_name(file_info.name);
     let form = Form::new().part("files[]", file_part);
 
     let request = client
@@ -411,9 +430,11 @@ async fn upload_file(
     if !json_data.success {
         eprintln!("Failed to upload: {:?}", json_data);
     }
+    let url = json_data.files[0].url.to_string();
     // println!("Upload URL: {}", json_data.files[0].url.yellow().bold());
 
-    uploads_direct_urls.push(json_data.files[0].url.to_string());
-    println!("{}", "Upload done".green());
+    if !url.is_empty() {
+        uploads_direct_urls.push(url);
+    }
     Ok(())
 }

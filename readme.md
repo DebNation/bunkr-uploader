@@ -7,7 +7,7 @@ cargo run -- path_to_file
 TODO:
 
 - [x] ask user to if he wants to upload file to a album or not, and if so, list all alumbs, let user select it.
-- add a help handler
+- [x] add a help handler
 - create new album from cli
 - split a video in multiple parts if the video size is over 2GB
 - store the token in an encrypted file
