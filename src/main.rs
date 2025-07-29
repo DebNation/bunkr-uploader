@@ -121,7 +121,7 @@ async fn main() {
             }
         }
     }
-    println!("{:?}", files_paths);
+    println!("You are uploading {:?}", files_paths);
 
     let upload_url: String = match utils::get_data(&token).await {
         Ok(data) => {
@@ -167,10 +167,15 @@ async fn main() {
         let absolute_file_path = current_dir.join(&file_path);
 
         let file_info = get_file_info(&file_path);
+
+        if file_info.1 > 20 * 1000 * 1000 * 1000 {
+            eprintln!("Your file size is more than 2GB");
+            continue;
+        }
         let uuid = Uuid::new_v4();
         let uuid_str = uuid.to_string();
 
-        let chunk_size: u32 = 25 * 1000 * 1000;
+        let chunk_size: u64 = 25 * 1000 * 1000;
         if file_info.1 < chunk_size {
             let _ = upload_file(
                 upload_url.to_owned(),
@@ -200,7 +205,7 @@ async fn main() {
     println!("{:?}", uploads_direct_urls)
 }
 
-fn get_file_info(file_path: &PathBuf) -> (String, u32, String) {
+fn get_file_info(file_path: &PathBuf) -> (String, u64, String) {
     let basename = Command::new("basename")
         .arg(&file_path)
         .output()
@@ -213,7 +218,7 @@ fn get_file_info(file_path: &PathBuf) -> (String, u32, String) {
         .output()
         .expect("size command failed to start");
     let str_size = str::from_utf8(&size.stdout).unwrap().trim();
-    let int_size: u32 = str_size.parse().unwrap();
+    let int_size: u64 = str_size.parse().unwrap();
 
     let mimetype_stdout = Command::new("file")
         .arg("--mime-type")
@@ -229,11 +234,11 @@ fn get_file_info(file_path: &PathBuf) -> (String, u32, String) {
     return (str_basename.to_string(), int_size, mime_type);
 }
 
-fn make_file_chunks(file: &PathBuf, chunks_folder: &str, chunk_size: u32) -> u8 {
+fn make_file_chunks(file: &PathBuf, chunks_folder: &str, chunk_size: u64) -> u8 {
     let input_file = File::open(&file).unwrap();
     let mut reader = BufReader::new(input_file);
-    let chunk_size_usize: usize = chunk_size.try_into().unwrap();
-    let mut buffer = vec![0u8; chunk_size_usize];
+    // let chunk_size_usize: u64 = chunk_size.try_into().unwrap();
+    let mut buffer = vec![0u8; chunk_size.try_into().unwrap()];
     let mut chunk_index = 0;
     loop {
         let bytes_read = reader.read(&mut buffer).unwrap();
@@ -255,9 +260,9 @@ async fn upload_big_file(
     upload_url: &str,
     token: &str,
     uuid: &str,
-    file_info: (String, u32, String),
+    file_info: (String, u64, String),
     total_chunks: u8,
-    chunk_size: u32,
+    chunk_size: u64,
     album_id: &str,
     uploads_direct_urls: &mut Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -373,7 +378,7 @@ async fn upload_big_file(
 async fn upload_file(
     upload_url: String,
     token: String,
-    file_info: (String, u32, String),
+    file_info: (String, u64, String),
     album_id: String,
     full_path: PathBuf,
     uploads_direct_urls: &mut Vec<String>,
