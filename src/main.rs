@@ -1,7 +1,10 @@
+use clap::Parser;
+use colored::*;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
 use reqwest::header::HeaderValue;
 use reqwest::multipart::{Form, Part};
+use serde::Deserialize;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::fs::File;
@@ -13,12 +16,8 @@ use std::{
     fs::{self},
     io::{self},
 };
-use std::{panic, vec};
 use uuid::Uuid;
 mod utils;
-use clap::Parser;
-use colored::*;
-use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct FinalResponse {
@@ -40,7 +39,7 @@ pub struct FileInfo {
 
 #[derive(Parser)]
 pub struct Args {
-    #[arg(short = 'u', long = "upload")]
+    #[arg(short = 'u', long = "upload", help = "path to directory or file")]
     upload: String,
 }
 
@@ -48,64 +47,13 @@ pub struct Args {
 async fn main() {
     let home = env::var("HOME").expect("HOME is not set");
     let token_dir = format!("{}/.local/share/bunkr-uploader", home);
-    let _ = fs::create_dir_all(&token_dir).expect("failed to create directory");
+    let _ = fs::create_dir_all(&token_dir).expect("failed to create chunks directory");
 
     let token_file_path = format!("{}/token.txt", &token_dir);
     let chunks_folder = format!("{}/chunks", token_dir);
     std::fs::create_dir_all(&chunks_folder).unwrap();
-    let mut token: String = String::new();
-    match fs::read_to_string(&token_file_path) {
-        Ok(content) => {
-            let is_token_verified: bool = match utils::verify_token(&content).await {
-                Ok(data) => {
-                    let is_verified: bool = data["success"].to_string().parse().unwrap();
-                    is_verified
-                }
-                Err(e) => {
-                    eprintln!("{:?}", e);
-                    false
-                }
-            };
-            if !is_token_verified {
-                eprintln!("Token is invalid");
-            }
-            token = content;
-            token.to_string()
-        }
 
-        Err(_) => {
-            while token.is_empty() {
-                io::stdout().flush().unwrap();
-                println!("Enter token: ");
-                let mut input_token: String = String::new();
-                io::stdin().read_line(&mut input_token).unwrap();
-                let trimmed_token = input_token.trim();
-                if trimmed_token.is_empty() {
-                    eprintln!("Token can't be empty");
-                    continue;
-                }
-                let is_token_verified = match utils::verify_token(trimmed_token).await {
-                    Ok(data) => {
-                        let is_verified: bool = data["success"].to_string().parse().unwrap();
-                        is_verified
-                    }
-                    Err(e) => {
-                        eprintln!("{:?}", e);
-                        continue;
-                    }
-                };
-
-                if !is_token_verified {
-                    eprintln!("Invalid Token Entered");
-                    continue;
-                }
-
-                let _ = fs::write(&token_file_path, trimmed_token);
-                token = trimmed_token.to_string().parse().unwrap();
-            }
-            token.to_string()
-        }
-    };
+    let token: String = utils::extras::verify_token(token_file_path).await;
 
     let path = Args::parse().upload;
     let mut files_paths: Vec<PathBuf> = vec![];
@@ -133,7 +81,7 @@ async fn main() {
     }
     println!("You are uploading {:?}", files_paths);
 
-    let upload_url: String = match utils::get_data(&token).await {
+    let upload_url: String = match utils::api::get_data(&token).await {
         Ok(data) => {
             let url: String = data["url"].to_string().parse().unwrap();
             let clean_url = url.trim_matches('"');
@@ -156,7 +104,7 @@ async fn main() {
         || upload_to_album.trim() == "Y"
         || upload_to_album.trim() == ""
     {
-        match utils::get_albums(&token).await {
+        match utils::api::get_albums(&token).await {
             Ok(data) => {
                 let labels: Vec<String> = data
                     .albums
