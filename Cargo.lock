@@ -116,6 +116,7 @@ checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
 name = "bunkr-uploader"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "clap",
  "colored",
  "dialoguer",

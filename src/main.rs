@@ -53,7 +53,8 @@ async fn main() {
     let chunks_folder = format!("{}/chunks", token_dir);
     std::fs::create_dir_all(&chunks_folder).unwrap();
 
-    let token: String = utils::extras::verify_token(token_file_path).await;
+    let token: String = utils::extras::handle_token(token_file_path).await;
+    // let token = env::var("TOKEN").expect("not set");
 
     let path = Args::parse().upload;
     let mut files_paths: Vec<PathBuf> = vec![];

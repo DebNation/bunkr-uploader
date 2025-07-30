@@ -20,7 +20,12 @@ pub async fn get_data(token: &str) -> Result<Value, Box<dyn std::error::Error>> 
     Ok(json)
 }
 
-pub async fn verify_token(token: &str) -> Result<Value, Box<dyn std::error::Error>> {
+#[derive(Debug, Deserialize)]
+pub struct VerifyTokenResp {
+    pub success: bool,
+}
+
+pub async fn verify_token(token: &str) -> Result<VerifyTokenResp, Box<dyn std::error::Error>> {
     let client = Client::new();
     let mut payload_hashmap = HashMap::new();
     payload_hashmap.insert("token", token);
@@ -32,7 +37,7 @@ pub async fn verify_token(token: &str) -> Result<Value, Box<dyn std::error::Erro
         .text()
         .await?;
 
-    let json: Value = serde_json::from_str(&response)?;
+    let json: VerifyTokenResp = serde_json::from_str(&response)?;
     Ok(json)
 }
 
