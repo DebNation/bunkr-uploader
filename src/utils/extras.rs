@@ -4,19 +4,27 @@ use std::{
     fs::{self},
     io::{self},
 };
-async fn retry_token(mut token: String, token_file_path: String) -> String {
-    while token.is_empty() {
-        io::stdout().flush().unwrap();
-        println!("Enter token: ");
-        let mut input_token: String = String::new();
-        io::stdin().read_line(&mut input_token).unwrap();
-        let trimmed_token = input_token.trim();
-        if trimmed_token.is_empty() {
-            eprintln!("Token can't be empty");
-            continue;
+async fn get_actual_token(token: String, token_file_path: String) -> String {
+    let mut verified: bool = false;
+    let mut prev_valid_token: bool = true;
+    let mut new_token: String = Default::default();
+
+    while !verified {
+        if token.is_empty() || !prev_valid_token {
+            io::stdout().flush().unwrap();
+            println!("Enter token: ");
+            let mut input_token: String = String::new();
+            io::stdin().read_line(&mut input_token).unwrap();
+            new_token = input_token.trim().to_string();
+            if new_token.is_empty() {
+                eprintln!("Token can't be empty");
+                continue;
+            }
+        } else {
+            new_token = token.clone();
         }
 
-        let is_token_verified = match super::api::verify_token(&trimmed_token).await {
+        let is_token_verified = match super::api::verify_token(&new_token).await {
             Ok(data) => data.success,
             Err(e) => {
                 eprintln!("{:?}", e);
@@ -25,14 +33,15 @@ async fn retry_token(mut token: String, token_file_path: String) -> String {
         };
 
         if !is_token_verified {
-            eprintln!("Invalid Token Entered");
+            eprintln!("Invalid Token");
+            prev_valid_token = false;
             continue;
         }
-        let b64 = general_purpose::STANDARD.encode(&trimmed_token);
+        let b64 = general_purpose::STANDARD.encode(&new_token);
         fs::write(&token_file_path, b64).unwrap();
-        token = trimmed_token.to_string();
+        verified = true;
     }
-    token.to_string()
+    new_token
 }
 
 pub async fn handle_token(token_file_path: String) -> String {
@@ -42,11 +51,12 @@ pub async fn handle_token(token_file_path: String) -> String {
             String::from_utf8(b64_decoded).unwrap()
         }
 
-        Err(e) => {
-            eprintln!("failed to parse token, {}", e);
+        Err(_) => {
+            // eprintln!("failed to parse token, {}", e);
             Default::default()
         }
     };
-    retry_token(token.to_string(), token_file_path).await;
-    token
+    let verified_token = get_actual_token(token, token_file_path).await;
+    // println!("Token Verified");
+    verified_token
 }

@@ -95,6 +95,7 @@ async fn main() {
         }
     };
 
+    println!("final {}", token);
     println!("Add to your album ? y/n");
 
     let mut upload_to_album: String = String::new();
