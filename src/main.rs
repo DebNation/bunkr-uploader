@@ -80,7 +80,10 @@ async fn main() {
             }
         }
     }
-    println!("You are uploading {:?}", files_paths);
+    println!("You are uploading: ");
+    for path in &files_paths {
+        println!("{:?}", path);
+    }
 
     let upload_url: String = match utils::api::get_data(&token).await {
         Ok(data) => {
@@ -129,8 +132,9 @@ async fn main() {
         let absolute_file_path = current_dir.join(&file_path);
 
         let file_info = get_file_info(&file_path);
+        println!("{:?}", file_info.size);
 
-        if file_info.size > 20 * 1000 * 1000 * 1000 {
+        if file_info.size > 2000 * 1000 * 1000 {
             eprintln!("Your file size is more than 2GB");
             continue;
         }
@@ -337,7 +341,7 @@ async fn upload_big_file(
     if !data.success {
         eprintln!("Failed to upload: {:?}", data);
     }
-    // println!("{}", data.files[0].url.yellow().bold());
+    println!("{} Done", file_info.name);
     uploads_direct_urls.push(data.files[0].url.to_string());
 
     Ok(())
