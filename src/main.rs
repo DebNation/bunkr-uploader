@@ -132,7 +132,6 @@ async fn main() {
         let absolute_file_path = current_dir.join(&file_path);
 
         let file_info = get_file_info(&file_path);
-        println!("{:?}", file_info.size);
 
         if file_info.size > 2000 * 1000 * 1000 {
             eprintln!("Your file size is more than 2GB");
