@@ -1,10 +1,10 @@
 use base64::{Engine as _, engine::general_purpose};
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::{
     fs::{self},
     io::{self},
 };
-async fn get_actual_token(token: String, token_file_path: String) -> String {
+async fn get_actual_token(token: &str, token_file_path: &str) -> String {
     let mut verified: bool = false;
     let mut prev_valid_token: bool = true;
     let mut new_token: String = Default::default();
@@ -21,7 +21,7 @@ async fn get_actual_token(token: String, token_file_path: String) -> String {
                 continue;
             }
         } else {
-            new_token = token.clone();
+            new_token = token.to_string();
         }
 
         let is_token_verified = match super::api::verify_token(&new_token).await {
@@ -51,11 +51,12 @@ pub async fn handle_token(token_file_path: String) -> String {
             String::from_utf8(b64_decoded).unwrap()
         }
 
-        Err(err) => {
-            return Err(err).expect("Failed to parse the token");
-        }
+        Err(err) => match err.kind() {
+            ErrorKind::NotFound => get_actual_token("", &token_file_path).await,
+            _ => return Err(err).expect("Failed to parse token file"),
+        },
     };
-    let verified_token = get_actual_token(token, token_file_path).await;
+    let verified_token = get_actual_token(&token, &token_file_path).await;
     // println!("Token Verified");
     verified_token
 }

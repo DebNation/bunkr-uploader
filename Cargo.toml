@@ -1,6 +1,6 @@
 [package]
 name = "bunkr-uploader"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Debiprasad Das <debiprasaddas@proton.me>"]
 edition = "2024"
 description = "A cli tool to upload files to bunkr.cr"
@@ -19,6 +19,7 @@ base64 = "0.22.1"
 clap = { version = "4.5.41", features = ["derive"] }
 colored = "3.0.0"
 dialoguer = "0.11.0"
+human-panic = "2.0.3"
 indicatif = "0.18.0"
 reqwest = { version = "0.12.22", features = ["json", "multipart"] }
 serde = { version = "1.0.219", features = ["derive"] }

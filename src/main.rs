@@ -45,17 +45,7 @@ pub struct Args {
 
 #[tokio::main]
 async fn main() {
-    let home = env::var("HOME").expect("HOME is not set");
-    let token_dir = format!("{}/.local/share/bunkr-uploader", home);
-    let _ = fs::create_dir_all(&token_dir).expect("failed to create chunks directory");
-
-    let token_file_path = format!("{}/token.txt", &token_dir);
-    let chunks_folder = format!("{}/chunks", token_dir);
-    std::fs::create_dir_all(&chunks_folder).unwrap();
-
-    let token: String = utils::extras::handle_token(token_file_path).await;
-    // let token = env::var("TOKEN").expect("not set");
-
+    human_panic::setup_panic!();
     let path = Args::parse().upload;
     let mut files_paths: Vec<PathBuf> = vec![];
     match fs::read_dir(&path) {
@@ -80,10 +70,18 @@ async fn main() {
             }
         }
     }
+
     println!("You are uploading: ");
     for path in &files_paths {
         println!("{:?}", path);
     }
+
+    let home = env::var("HOME").expect("HOME is not set");
+    let token_dir = format!("{}/.local/share/bunkr-uploader", home);
+    let token_file_path = format!("{}/token.txt", &token_dir);
+    let chunks_folder = format!("{}/chunks", token_dir);
+    fs::create_dir_all(&chunks_folder).expect("failed to create chunks directory");
+    let token: String = utils::extras::handle_token(token_file_path).await;
 
     let upload_url: String = match utils::api::get_data(&token).await {
         Ok(data) => {
@@ -340,7 +338,7 @@ async fn upload_big_file(
     if !data.success {
         eprintln!("Failed to upload: {:?}", data);
     }
-    println!("{} Done", file_info.name);
+    println!("{} ✔ ", file_info.name);
     uploads_direct_urls.push(data.files[0].url.to_string());
 
     Ok(())
