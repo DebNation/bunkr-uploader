@@ -1,7 +1,18 @@
 [package]
 name = "bunkr-uploader"
 version = "0.1.0"
+authors = ["Debiprasad Das <debiprasaddas@proton.me>"]
 edition = "2024"
+description = "A cli tool to upload files to bunkr.cr"
+repository = "https://github.com/DebNation/bunkr-uploader"
+license = "GPL-3.0-or-later"
+keywords = [
+  "bunkr",
+  "cli",
+  "cli-tool",
+  "upload",
+]
+categories = ["command-line-utilities"]
 
 [dependencies]
 base64 = "0.22.1"
