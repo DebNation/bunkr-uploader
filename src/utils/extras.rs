@@ -51,9 +51,8 @@ pub async fn handle_token(token_file_path: String) -> String {
             String::from_utf8(b64_decoded).unwrap()
         }
 
-        Err(_) => {
-            // eprintln!("failed to parse token, {}", e);
-            Default::default()
+        Err(err) => {
+            return Err(err).expect("Failed to parse the token");
         }
     };
     let verified_token = get_actual_token(token, token_file_path).await;
