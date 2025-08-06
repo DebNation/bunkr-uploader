@@ -132,7 +132,7 @@ async fn main() {
         let file_info = get_file_info(&file_path);
 
         if file_info.size > 2000 * 1000 * 1000 {
-            eprintln!("Your file size is more than 2GB");
+            eprintln!("Failed to upload '{}', is more than 2GB", file_info.name);
             continue;
         }
         let uuid = Uuid::new_v4();
