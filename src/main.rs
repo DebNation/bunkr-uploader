@@ -8,7 +8,8 @@ use serde::Deserialize;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, ErrorKind, Read, Write};
+use std::fs::OpenOptions;
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{
@@ -52,33 +53,6 @@ async fn main() {
     let mut files_paths: Vec<PathBuf> = vec![];
     let mut upload_from_all_sub_dir = false;
     handle_paths(path, &mut files_paths, &mut upload_from_all_sub_dir);
-    // match fs::read_dir(&path) {
-    //     Ok(entries) => {
-    //         for entry in entries {
-    //             match entry {
-    //                 Ok(entry) => {
-    //                     let file_path = entry.path();
-    //                     let metadata = file_path
-    //                         .metadata()
-    //                         .expect(&format!("failed to detect metadata of {:?}", file_path));
-    //                     if metadata.is_file() {
-    //                         files_paths.push(file_path.to_owned());
-    //                     }
-    //                 }
-    //                 Err(e) => {
-    //                     panic!("{}", e);
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     Err(e) => {
-    //         panic!("{}", e);
-    //         // if e.kind() == ErrorKind::NotADirectory {
-    //         //     // files_paths.push(path.into());
-    //         // } else {
-    //         // }
-    //     }
-    // }
 
     println!("You are uploading: ");
     for path in &files_paths {
@@ -86,10 +60,19 @@ async fn main() {
     }
 
     let home = env::var("HOME").expect("HOME is not set");
-    let token_dir = format!("{}/.local/share/bunkr-uploader", home);
-    let token_file_path = format!("{}/token.txt", &token_dir);
-    let chunks_folder = format!("{}/chunks", token_dir);
+    let resources_path = format!("{}/.local/share/bunkr-uploader", home);
+    let token_file_path = format!("{}/token.txt", &resources_path);
+    let logs_file_path = format!("{}/logs.txt", &resources_path);
+    let chunks_folder = format!("{}/chunks", &resources_path);
     fs::create_dir_all(&chunks_folder).expect("failed to create chunks directory");
+    // fs::create_dir_all(&logs_file_path).expect("failed to create logs directory");
+    let logs_file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&logs_file_path)
+        .unwrap();
+
+    let mut logs_file_writer = BufWriter::new(logs_file);
     let token: String = utils::extras::handle_token(token_file_path).await;
 
     let upload_url: String = match utils::api::get_data(&token).await {
@@ -139,6 +122,21 @@ async fn main() {
         let absolute_file_path = current_dir.join(&file_path);
         let file_info = get_file_info(&file_path);
 
+        let logs_contents: String = match fs::read_to_string(&logs_file_path) {
+            Ok(content) => content,
+            Err(e) => {
+                eprintln!("Failed to read from logs file {}", e);
+                "".to_string()
+            }
+        };
+        println!("logs Contents: {:?}", logs_contents);
+        let file_path_string = file_path.to_string_lossy().to_string();
+
+        if logs_contents.contains(&file_path_string) {
+            eprintln!("Skipped, due to file was already been uploaded.");
+            continue;
+        }
+
         if file_info.size > 2000 * 1000 * 1000 {
             eprintln!("Failed to upload '{}', is more than 2GB", file_info.name);
             continue;
@@ -155,6 +153,7 @@ async fn main() {
                 album_id.to_owned(),
                 absolute_file_path.to_owned(),
                 &mut uploads_direct_urls,
+                &mut logs_file_writer,
             )
             .await;
         } else {
@@ -170,6 +169,8 @@ async fn main() {
                 chunk_size,
                 &album_id,
                 &mut uploads_direct_urls,
+                absolute_file_path,
+                &mut logs_file_writer,
             )
             .await;
         }
@@ -243,6 +244,8 @@ async fn upload_big_file(
     chunk_size: u64,
     album_id: &str,
     uploads_direct_urls: &mut Vec<String>,
+    absolute_file_path: PathBuf,
+    logs_file_writer: &mut BufWriter<File>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
     let mut uploaded = 0;
@@ -349,6 +352,10 @@ async fn upload_big_file(
     println!("{} ✔ ", file_info.name);
     uploads_direct_urls.push(data.files[0].url.to_string());
 
+    let full_path_string = absolute_file_path.to_string_lossy();
+    writeln!(logs_file_writer, "{}", full_path_string)?;
+    writeln!(logs_file_writer, "{}", file_info.name)?;
+
     Ok(())
 }
 
@@ -359,6 +366,7 @@ async fn upload_file(
     album_id: String,
     full_path: PathBuf,
     uploads_direct_urls: &mut Vec<String>,
+    logs_file_writer: &mut BufWriter<File>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
 
@@ -395,6 +403,11 @@ async fn upload_file(
     if !url.is_empty() {
         uploads_direct_urls.push(url);
     }
+
+    let full_path_string = full_path.to_string_lossy();
+    writeln!(logs_file_writer, "{}", full_path_string)?;
+    writeln!(logs_file_writer, "{}", file_info.name)?;
+
     println!("{} ✔ ", file_info.name);
     Ok(())
 }

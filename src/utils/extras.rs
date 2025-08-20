@@ -113,11 +113,11 @@ pub fn handle_paths(
             }
         }
         Err(e) => {
-            panic!("{}", e);
-            // if e.kind() == ErrorKind::NotADirectory {
-            //     // files_paths.push(path.into());
-            // } else {
-            // }
+            if e.kind() == ErrorKind::NotADirectory {
+                files_paths.push(path.into());
+            } else {
+                panic!("{}", e);
+            }
         }
     }
 }
