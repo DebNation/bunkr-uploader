@@ -17,6 +17,8 @@ use std::{
     io::{self},
 };
 use uuid::Uuid;
+
+use crate::utils::extras::handle_paths;
 mod utils;
 
 #[derive(Debug, Deserialize)]
@@ -48,28 +50,35 @@ async fn main() {
     human_panic::setup_panic!();
     let path = Args::parse().upload;
     let mut files_paths: Vec<PathBuf> = vec![];
-    match fs::read_dir(&path) {
-        Ok(entries) => {
-            for entry in entries {
-                match entry {
-                    Ok(entry) => {
-                        let file_path = entry.path();
-                        files_paths.push(file_path.to_owned());
-                    }
-                    Err(e) => {
-                        panic!("{}", e);
-                    }
-                }
-            }
-        }
-        Err(e) => {
-            if e.kind() == ErrorKind::NotADirectory {
-                files_paths.push(path.into());
-            } else {
-                panic!("{}", e);
-            }
-        }
-    }
+    let mut upload_from_all_sub_dir = false;
+    handle_paths(path, &mut files_paths, &mut upload_from_all_sub_dir);
+    // match fs::read_dir(&path) {
+    //     Ok(entries) => {
+    //         for entry in entries {
+    //             match entry {
+    //                 Ok(entry) => {
+    //                     let file_path = entry.path();
+    //                     let metadata = file_path
+    //                         .metadata()
+    //                         .expect(&format!("failed to detect metadata of {:?}", file_path));
+    //                     if metadata.is_file() {
+    //                         files_paths.push(file_path.to_owned());
+    //                     }
+    //                 }
+    //                 Err(e) => {
+    //                     panic!("{}", e);
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     Err(e) => {
+    //         panic!("{}", e);
+    //         // if e.kind() == ErrorKind::NotADirectory {
+    //         //     // files_paths.push(path.into());
+    //         // } else {
+    //         // }
+    //     }
+    // }
 
     println!("You are uploading: ");
     for path in &files_paths {
@@ -128,7 +137,6 @@ async fn main() {
     for file_path in files_paths {
         let current_dir = env::current_dir().unwrap();
         let absolute_file_path = current_dir.join(&file_path);
-
         let file_info = get_file_info(&file_path);
 
         if file_info.size > 2000 * 1000 * 1000 {
@@ -264,7 +272,7 @@ async fn upload_big_file(
         };
 
         let byte_offset = chunk_index as u64 * chunk_size as u64;
-        let file_part = Part::bytes(file_contents).file_name(chunk_filename.clone());
+        let file_part = Part::bytes(file_contents).file_name(chunk_filename);
 
         let form = Form::new()
             .text("dzuuid", uuid.to_string())
@@ -353,6 +361,7 @@ async fn upload_file(
     uploads_direct_urls: &mut Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
+
     let file_contents = match fs::read(&full_path) {
         Ok(contents) => contents,
         Err(e) => {
@@ -361,7 +370,7 @@ async fn upload_file(
         }
     };
 
-    let file_part = Part::bytes(file_contents).file_name(file_info.name);
+    let file_part = Part::bytes(file_contents).file_name(file_info.name.clone());
     let form = Form::new().part("files[]", file_part);
 
     let request = client
@@ -386,5 +395,6 @@ async fn upload_file(
     if !url.is_empty() {
         uploads_direct_urls.push(url);
     }
+    println!("{} ✔ ", file_info.name);
     Ok(())
 }

@@ -60,3 +60,64 @@ pub async fn handle_token(token_file_path: String) -> String {
     // println!("Token Verified");
     verified_token
 }
+
+pub fn handle_paths(
+    path: String,
+    mut files_paths: &mut Vec<std::path::PathBuf>,
+    upload_from_all_sub_dir: &mut bool,
+) {
+    match fs::read_dir(&path) {
+        Ok(entries) => {
+            for entry in entries {
+                match entry {
+                    Ok(entry) => {
+                        let file_path = entry.path();
+                        let metadata = file_path
+                            .metadata()
+                            .expect(&format!("failed to detect metadata of {:?}", file_path));
+                        if !metadata.is_file() {
+                            let mut upload_from_sub_dir: String = String::new();
+                            if *upload_from_all_sub_dir == false {
+                                println!(
+                                    "{}",
+                                    format!(
+                                        "Do you want to upload from this subdir {:?}, y/n/A",
+                                        file_path
+                                    )
+                                );
+                                io::stdin().read_line(&mut upload_from_sub_dir).unwrap();
+                            }
+                            if upload_from_sub_dir.trim() == "A" {
+                                *upload_from_all_sub_dir = true;
+                            }
+
+                            if upload_from_sub_dir.trim() == "Y"
+                                || upload_from_sub_dir.trim() == "y"
+                                || upload_from_sub_dir.trim() == ""
+                                || upload_from_sub_dir.trim() == "A"
+                            {
+                                handle_paths(
+                                    file_path.to_string_lossy().to_string(),
+                                    &mut files_paths,
+                                    upload_from_all_sub_dir,
+                                );
+                            }
+                        } else {
+                            files_paths.push(file_path.to_owned());
+                        }
+                    }
+                    Err(e) => {
+                        panic!("{}", e);
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            panic!("{}", e);
+            // if e.kind() == ErrorKind::NotADirectory {
+            //     // files_paths.push(path.into());
+            // } else {
+            // }
+        }
+    }
+}
