@@ -129,7 +129,6 @@ async fn main() {
                 "".to_string()
             }
         };
-        println!("logs Contents: {:?}", logs_contents);
         let file_path_string = file_path.to_string_lossy().to_string();
 
         if logs_contents.contains(&file_path_string) {
