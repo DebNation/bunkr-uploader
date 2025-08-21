@@ -1,4 +1,5 @@
 use base64::{Engine as _, engine::general_purpose};
+use core::panic;
 use std::io::{ErrorKind, Write};
 use std::{
     fs::{self},
@@ -27,8 +28,8 @@ async fn get_actual_token(token: &str, token_file_path: &str) -> String {
         let is_token_verified = match super::api::verify_token(&new_token).await {
             Ok(data) => data.success,
             Err(e) => {
-                eprintln!("{:?}", e);
-                continue;
+                // eprintln!("{:?}", e);
+                panic!("Token verification failed due to: {}", e);
             }
         };
 

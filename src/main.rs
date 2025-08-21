@@ -62,7 +62,7 @@ async fn main() {
     }
     println!(
         "{}",
-        format!("Total files: {}", files_paths.len())
+        format!("Total files: {}", &files_paths.len())
             .yellow()
             .bold()
     );
@@ -140,7 +140,7 @@ async fn main() {
         };
     }
     let mut uploads_direct_urls: Vec<String> = vec![];
-    for file_path in files_paths {
+    for file_path in &files_paths {
         let current_dir = env::current_dir().unwrap();
         let absolute_file_path = current_dir.join(&file_path);
         let file_info = get_file_info(&file_path);
@@ -200,6 +200,19 @@ async fn main() {
     for (index, url) in uploads_direct_urls.iter().enumerate() {
         println!("{}: {}", index + 1, url.yellow());
     }
+    println!(
+        "{}",
+        format!("Success: {}", uploads_direct_urls.len())
+            .green()
+            .bold()
+    );
+
+    println!(
+        "{}",
+        format!("Failed: {}", &files_paths.len() - &uploads_direct_urls.len())
+            .red()
+            .bold()
+    );
     logs_file_writer.flush().unwrap();
     fs::remove_dir_all(chunks_folder).expect("failed to remove chunks directory");
 }
