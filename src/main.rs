@@ -58,6 +58,12 @@ async fn main() {
     for path in &files_paths {
         println!("{:?}", path);
     }
+    println!(
+        "{}",
+        format!("Total files: {}", files_paths.len())
+            .yellow()
+            .bold()
+    );
 
     let home = env::var("HOME").expect("HOME is not set");
     let resources_path = format!("{}/.local/share/bunkr-uploader", home);
@@ -177,6 +183,7 @@ async fn main() {
     for (index, url) in uploads_direct_urls.iter().enumerate() {
         println!("{}: {}", index + 1, url.yellow());
     }
+    logs_file_writer.flush().unwrap()
 }
 
 fn get_file_info(file_path: &PathBuf) -> FileInfo {
