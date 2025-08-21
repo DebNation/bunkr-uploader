@@ -1,6 +1,8 @@
 use clap::Parser;
 use colored::*;
 use indicatif::{ProgressBar, ProgressStyle};
+use rand::Rng;
+use rand::distr::Alphanumeric;
 use reqwest::Client;
 use reqwest::header::HeaderValue;
 use reqwest::multipart::{Form, Part};
@@ -69,9 +71,24 @@ async fn main() {
     let resources_path = format!("{}/.local/share/bunkr-uploader", home);
     let token_file_path = format!("{}/token.txt", &resources_path);
     let logs_file_path = format!("{}/logs.txt", &resources_path);
-    let chunks_folder = format!("{}/chunks", &resources_path);
+    let random_string: String = rand::rng()
+        .sample_iter(&Alphanumeric)
+        .take(10)
+        .map(char::from)
+        .collect();
+
+    let chunks_folder = format!("{}/{}", &resources_path, &random_string,);
+
+    // if !Path::new(&chunks_folder).exists() {
+    //     let random_string_again: String = rand::rng()
+    //         .sample_iter(&Alphanumeric)
+    //         .take(10)
+    //         .map(char::from)
+    //         .collect();
+    //
+    //     chunks_folder = format!("{}/{}", &resources_path, &random_string_again,);
+    // }
     fs::create_dir_all(&chunks_folder).expect("failed to create chunks directory");
-    // fs::create_dir_all(&logs_file_path).expect("failed to create logs directory");
     let logs_file = OpenOptions::new()
         .append(true)
         .create(true)
@@ -183,7 +200,8 @@ async fn main() {
     for (index, url) in uploads_direct_urls.iter().enumerate() {
         println!("{}: {}", index + 1, url.yellow());
     }
-    logs_file_writer.flush().unwrap()
+    logs_file_writer.flush().unwrap();
+    fs::remove_dir_all(chunks_folder).expect("failed to remove chunks directory");
 }
 
 fn get_file_info(file_path: &PathBuf) -> FileInfo {
