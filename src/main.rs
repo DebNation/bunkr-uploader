@@ -44,14 +44,19 @@ pub struct FileInfo {
 
 #[derive(Parser)]
 pub struct Args {
-    #[arg(value_name = "PATHS", help = "path to files or directory")]
+    #[arg(help = "path to files or directory")]
     paths: Vec<String>,
+
+    #[arg(short = 'f', help = "force upload without skipping")]
+    force: bool,
 }
 
 #[tokio::main]
 async fn main() {
     human_panic::setup_panic!();
     let paths = Args::parse().paths;
+    let force_upload = Args::parse().force;
+    println!("{}", force_upload);
 
     let mut files_paths: Vec<PathBuf> = vec![];
     let mut upload_from_all_sub_dir = false;
@@ -151,10 +156,10 @@ async fn main() {
         };
         let file_path_string = file_path.to_string_lossy().to_string();
 
-        if logs_contents.contains(&file_path_string) {
+        if logs_contents.contains(&file_path_string) && !force_upload {
             skipped_files.push(absolute_file_path);
             eprintln!(
-                "{} Skipped, due to file was already been uploaded.",
+                "{} Skipped, due to file already has been uploaded.",
                 file_info.name
             );
             continue;
@@ -288,6 +293,7 @@ async fn upload_big_file(
     absolute_file_path: PathBuf,
     logs_file_writer: &mut BufWriter<File>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    println!("we are in upload_file fn");
     let client = Client::new();
     let mut uploaded = 0;
     let total_size = file_info.size;
@@ -409,6 +415,7 @@ async fn upload_file(
     uploads_direct_urls: &mut Vec<String>,
     logs_file_writer: &mut BufWriter<File>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    println!("we are in upload_file fn");
     let client = Client::new();
 
     let file_contents = match fs::read(&full_path) {
@@ -427,6 +434,7 @@ async fn upload_file(
         .header("token", HeaderValue::from_str(&token)?)
         .header("albumid", HeaderValue::from_str(&album_id)?);
     let request_with_form = request.multipart(form);
+    println!("body is ready");
     let res = match request_with_form.send().await {
         Ok(response) => response,
         Err(e) => {
@@ -434,10 +442,11 @@ async fn upload_file(
             Err(e)?
         }
     };
-    let json_data: FinalResponse = serde_json::from_str(&res.text().await.unwrap())?;
-    if !json_data.success {
-        eprintln!("Failed to upload: {:?}", json_data);
+    if res.status() != 200 {
+        eprintln!("Failed to upload,  {:?}", res);
     }
+    let json_data: FinalResponse = serde_json::from_str(&res.text().await.unwrap())?;
+    println!("{:?}", json_data);
     let url = json_data.files[0].url.to_string();
     // println!("Upload URL: {}", json_data.files[0].url.yellow().bold());
 
