@@ -9,8 +9,8 @@ use reqwest::multipart::{Form, Part};
 use serde::Deserialize;
 use std::cmp::min;
 use std::collections::HashMap;
-use std::fs::File;
 use std::fs::OpenOptions;
+use std::fs::{File, remove_dir_all};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -77,17 +77,10 @@ async fn main() {
         .map(char::from)
         .collect();
 
+    delete_all_dir(&resources_path);
+
     let chunks_folder = format!("{}/{}", &resources_path, &random_string,);
 
-    // if !Path::new(&chunks_folder).exists() {
-    //     let random_string_again: String = rand::rng()
-    //         .sample_iter(&Alphanumeric)
-    //         .take(10)
-    //         .map(char::from)
-    //         .collect();
-    //
-    //     chunks_folder = format!("{}/{}", &resources_path, &random_string_again,);
-    // }
     fs::create_dir_all(&chunks_folder).expect("failed to create chunks directory");
     let logs_file = OpenOptions::new()
         .append(true)
@@ -155,7 +148,10 @@ async fn main() {
         let file_path_string = file_path.to_string_lossy().to_string();
 
         if logs_contents.contains(&file_path_string) {
-            eprintln!("Skipped, due to file was already been uploaded.");
+            eprintln!(
+                "{} Skipped, due to file was already been uploaded.",
+                file_info.name
+            );
             continue;
         }
 
@@ -209,9 +205,12 @@ async fn main() {
 
     println!(
         "{}",
-        format!("Failed: {}", &files_paths.len() - &uploads_direct_urls.len())
-            .red()
-            .bold()
+        format!(
+            "Failed: {}",
+            &files_paths.len() - &uploads_direct_urls.len()
+        )
+        .red()
+        .bold()
     );
     logs_file_writer.flush().unwrap();
     fs::remove_dir_all(chunks_folder).expect("failed to remove chunks directory");
@@ -447,4 +446,18 @@ async fn upload_file(
 
     println!("{} ✔ ", file_info.name);
     Ok(())
+}
+
+fn delete_all_dir(resources_path: &str) {
+    match fs::read_dir(resources_path) {
+        Ok(entries) => {
+            for entry in entries {
+                let path = entry.expect("failed to read directory entry").path();
+                if path.is_dir() {
+                    fs::remove_dir_all(path).expect("failed to remove chunk directory");
+                }
+            }
+        }
+        Err(e) => eprintln!("failed to read resources path, {}", e),
+    };
 }
