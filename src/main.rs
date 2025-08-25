@@ -9,8 +9,8 @@ use reqwest::multipart::{Form, Part};
 use serde::Deserialize;
 use std::cmp::min;
 use std::collections::HashMap;
+use std::fs::File;
 use std::fs::OpenOptions;
-use std::fs::{File, remove_dir_all};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -44,17 +44,20 @@ pub struct FileInfo {
 
 #[derive(Parser)]
 pub struct Args {
-    #[arg(short = 'u', long = "upload", help = "path to directory or file")]
-    upload: String,
+    #[arg(value_name = "PATHS", help = "path to files or directory")]
+    paths: Vec<String>,
 }
 
 #[tokio::main]
 async fn main() {
     human_panic::setup_panic!();
-    let path = Args::parse().upload;
+    let paths = Args::parse().paths;
+
     let mut files_paths: Vec<PathBuf> = vec![];
     let mut upload_from_all_sub_dir = false;
-    handle_paths(path, &mut files_paths, &mut upload_from_all_sub_dir);
+    for path in paths {
+        handle_paths(path, &mut files_paths, &mut upload_from_all_sub_dir);
+    }
 
     println!("You are uploading: ");
     for path in &files_paths {
@@ -133,6 +136,7 @@ async fn main() {
         };
     }
     let mut uploads_direct_urls: Vec<String> = vec![];
+    let mut skipped_files: Vec<PathBuf> = vec![];
     for file_path in &files_paths {
         let current_dir = env::current_dir().unwrap();
         let absolute_file_path = current_dir.join(&file_path);
@@ -148,6 +152,7 @@ async fn main() {
         let file_path_string = file_path.to_string_lossy().to_string();
 
         if logs_contents.contains(&file_path_string) {
+            skipped_files.push(absolute_file_path);
             eprintln!(
                 "{} Skipped, due to file was already been uploaded.",
                 file_info.name
@@ -207,7 +212,7 @@ async fn main() {
         "{}",
         format!(
             "Failed: {}",
-            &files_paths.len() - &uploads_direct_urls.len()
+            &files_paths.len() - (&uploads_direct_urls.len() + skipped_files.len())
         )
         .red()
         .bold()
