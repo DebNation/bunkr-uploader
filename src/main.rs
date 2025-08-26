@@ -28,6 +28,7 @@ mod utils;
 pub struct FinalResponse {
     pub success: bool,
     pub files: Vec<Files>,
+    pub status: u16,
 }
 
 #[derive(Debug, Deserialize)]
@@ -56,7 +57,6 @@ async fn main() {
     human_panic::setup_panic!();
     let paths = Args::parse().paths;
     let force_upload = Args::parse().force;
-    println!("{}", force_upload);
 
     let mut files_paths: Vec<PathBuf> = vec![];
     let mut upload_from_all_sub_dir = false;
@@ -66,7 +66,7 @@ async fn main() {
 
     println!("You are uploading: ");
     for path in &files_paths {
-        println!("{:?}", path);
+        println!("{}", path.to_string_lossy());
     }
     println!(
         "{}",
@@ -293,7 +293,6 @@ async fn upload_big_file(
     absolute_file_path: PathBuf,
     logs_file_writer: &mut BufWriter<File>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("we are in upload_file fn");
     let client = Client::new();
     let mut uploaded = 0;
     let total_size = file_info.size;
@@ -355,14 +354,14 @@ async fn upload_big_file(
                 .await
                 .unwrap_or_else(|_| "Could not read response".to_string());
             println!(
-                "✗ Upload failed for chunk {}: {} - Response: {}",
+                "✗ Upload failed for chunk {}: Status Code: {} - Response: {}",
                 chunk_index, status, body
             );
             continue;
         }
-        let new = min(uploaded + chunk_size, file_info.size);
-        uploaded = new;
-        pb.set_position(new.into());
+        let new_progrss = min(uploaded + chunk_size, file_info.size);
+        uploaded = new_progrss;
+        pb.set_position(new_progrss.into());
         fs::remove_file(chunk_index_path).unwrap();
     }
 
@@ -396,6 +395,14 @@ async fn upload_big_file(
     if !data.success {
         eprintln!("Failed to upload: {:?}", data);
     }
+
+    if data.status == 500 {
+        eprintln!(
+            "{}",
+            "You have been rate limited, Please try again after sometime".bold()
+        );
+    }
+
     println!("{} ✔ ", file_info.name);
     uploads_direct_urls.push(data.files[0].url.to_string());
 
@@ -415,7 +422,6 @@ async fn upload_file(
     uploads_direct_urls: &mut Vec<String>,
     logs_file_writer: &mut BufWriter<File>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("we are in upload_file fn");
     let client = Client::new();
 
     let file_contents = match fs::read(&full_path) {
@@ -434,7 +440,6 @@ async fn upload_file(
         .header("token", HeaderValue::from_str(&token)?)
         .header("albumid", HeaderValue::from_str(&album_id)?);
     let request_with_form = request.multipart(form);
-    println!("body is ready");
     let res = match request_with_form.send().await {
         Ok(response) => response,
         Err(e) => {
@@ -443,10 +448,17 @@ async fn upload_file(
         }
     };
     if res.status() != 200 {
-        eprintln!("Failed to upload,  {:?}", res);
+        eprintln!("Failed to upload,  {:?}", &res);
+    }
+
+    if res.status() == 500 {
+        eprintln!(
+            "{}",
+            "You have been rate limited, Please try again after sometime.".bold()
+        );
     }
     let json_data: FinalResponse = serde_json::from_str(&res.text().await.unwrap())?;
-    println!("{:?}", json_data);
+
     let url = json_data.files[0].url.to_string();
     // println!("Upload URL: {}", json_data.files[0].url.yellow().bold());
 

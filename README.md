@@ -3,6 +3,5 @@
 ```
 cargo install bunkr-uploader
 bunkr-uploader --help
+bunkr-uploader <File/Dir_Path_here> 
 ```
-Todo:
-- [] handle rate limit error.
