@@ -1,7 +1,17 @@
-### Usage :
+## Usage
 
+- Installation
 ```
 cargo install bunkr-uploader
+```
+- View available commands and options
+
+```
 bunkr-uploader --help
-bunkr-uploader <File/Dir_Path_here> 
+```
+
+- Upload a file or directory
+
+```
+bunkr-uploader <path-to-file-or-directory>
 ```
