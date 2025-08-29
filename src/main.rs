@@ -28,7 +28,6 @@ mod utils;
 pub struct FinalResponse {
     pub success: bool,
     pub files: Vec<Files>,
-    pub status: u16,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,6 +61,10 @@ async fn main() {
     let mut upload_from_all_sub_dir = false;
     for path in paths {
         handle_paths(path, &mut files_paths, &mut upload_from_all_sub_dir);
+    }
+    if files_paths.len() == 0 {
+        println!("No paths given!");
+        return;
     }
 
     println!("You are uploading: ");
@@ -389,20 +392,16 @@ async fn upload_big_file(
     if !rebuild_file_res.status().is_success() {
         eprintln!("Failed to Upload the file, {:?}", rebuild_file_res);
     }
-    let res_body = rebuild_file_res.text().await.unwrap();
 
-    let data: FinalResponse = serde_json::from_str(&res_body)?;
-    if !data.success {
-        eprintln!("Failed to upload: {:?}", data);
-    }
-
-    if data.status == 500 {
+    if rebuild_file_res.status() == 500 {
         eprintln!(
             "{}",
             "You have been rate limited, Please try again after sometime".bold()
         );
     }
+    let res_body = rebuild_file_res.text().await.unwrap();
 
+    let data: FinalResponse = serde_json::from_str(&res_body)?;
     println!("{} ✔ ", file_info.name);
     uploads_direct_urls.push(data.files[0].url.to_string());
 
