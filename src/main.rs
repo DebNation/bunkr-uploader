@@ -225,7 +225,6 @@ async fn main() {
         .red()
         .bold()
     );
-    logs_file_writer.flush().unwrap();
     fs::remove_dir_all(chunks_folder).expect("failed to remove chunks directory");
 }
 
@@ -408,6 +407,7 @@ async fn upload_big_file(
     let full_path_string = absolute_file_path.to_string_lossy();
     writeln!(logs_file_writer, "{}", full_path_string)?;
     writeln!(logs_file_writer, "{}", file_info.name)?;
+    logs_file_writer.flush().unwrap();
 
     Ok(())
 }
@@ -468,6 +468,7 @@ async fn upload_file(
     let full_path_string = full_path.to_string_lossy();
     writeln!(logs_file_writer, "{}", full_path_string)?;
     writeln!(logs_file_writer, "{}", file_info.name)?;
+    logs_file_writer.flush().unwrap();
 
     println!("{} ✔ ", file_info.name);
     Ok(())

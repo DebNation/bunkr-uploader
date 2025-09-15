@@ -1,6 +1,6 @@
 [package]
 name = "bunkr-uploader"
-version = "0.2.2"
+version = "0.2.3"
 authors = ["Debiprasad Das <debiprasaddas@proton.me>"]
 edition = "2024"
 description = "A cli tool to upload files to bunkr.cr"
