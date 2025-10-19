@@ -1,4 +1,7 @@
 ## Usage
+#### Requirements
+- You must have an bunkr account to be able to upload.
+- `https://dash.bunkr.cr/dashboard` visit your dashboard to get the account token.
 
 - Installation
 ```
