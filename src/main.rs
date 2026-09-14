@@ -52,6 +52,7 @@ async fn main() {
         .map(char::from)
         .collect();
 
+    fs::create_dir_all(&resources_path).expect("failed to create resources path");
     utils::fs::delete_all_dir(&resources_path);
 
     let chunks_folder = format!("{}/{}", &resources_path, &random_string);

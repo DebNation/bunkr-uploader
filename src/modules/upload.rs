@@ -194,7 +194,9 @@ async fn upload_big_file(
         };
 
         let byte_offset = chunk_index as u64 * chunk_size as u64;
-        let file_part = Part::bytes(file_contents).file_name(chunk_filename);
+        let file_part = Part::bytes(file_contents)
+            .file_name(file_info.name.clone())
+            .mime_str(&file_info.mime_type)?;
 
         let form = Form::new()
             .text("dzuuid", uuid.to_string())
@@ -302,13 +304,16 @@ async fn upload_file(
         }
     };
 
-    let file_part = Part::bytes(file_contents).file_name(file_info.name.clone());
+    let file_part = Part::bytes(file_contents)
+        .file_name(file_info.name.clone())
+        .mime_str(&file_info.mime_type)?;
     let form = Form::new().part("files[]", file_part);
 
     let request = client
         .post(&upload_url)
         .header("token", HeaderValue::from_str(&token)?)
         .header("albumid", HeaderValue::from_str(&album_id)?);
+
     let request_with_form = request.multipart(form);
     let res = match request_with_form.send().await {
         Ok(response) => response,
@@ -343,3 +348,14 @@ async fn upload_file(
     println!("{} ✔ ", file_info.name);
     Ok(())
 }
+
+//INFO: OPTIONAL_HEADERS:
+// .header("accept", "application/json")
+// .header("origin", "https://dash.bunkr.cr")
+// .header("referer", "https://dash.bunkr.cr/")
+// .header("x-requested-with", "XMLHttpRequest")
+// .header(
+//     "user-agent",
+//     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
+//  (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+// );
