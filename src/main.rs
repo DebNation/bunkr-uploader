@@ -10,6 +10,7 @@ mod modules;
 mod utils;
 
 #[derive(Parser)]
+#[command(version, about)]
 pub struct Args {
     #[arg(help = "path to files or directory")]
     paths: Vec<String>,
