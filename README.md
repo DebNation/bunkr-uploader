@@ -52,11 +52,12 @@ https://github.com/debiplobi/bunkr-uploader/releases
 Usage: bunkr-uploader [OPTIONS] [PATHS]...
 
 Arguments:
-  [PATHS]...  Path to files or directory
+  [PATHS]...  path to files or directory
 
 Options:
-  -f          Force upload without skipping (special case)
-  -h, --help  Print help
+  -f             force upload without skipping(for special case)
+  -h, --help     Print help
+  -V, --version  Print version
 ```
 
 ------------------------------------------------------------------------
