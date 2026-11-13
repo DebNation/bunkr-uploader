@@ -97,7 +97,7 @@ pub fn get_file_paths(paths: Vec<String>, resources_path: &str) -> Vec<PathBuf> 
 
             let _ = fs::remove_file(&picked_files);
         } else {
-            eprintln!("yazi not installed, please manually pass the file paths");
+            eprintln!("yazi is not installed, please manually pass the file paths");
         }
     }
     files_paths

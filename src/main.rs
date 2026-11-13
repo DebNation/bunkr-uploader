@@ -15,7 +15,7 @@ pub struct Args {
     #[arg(help = "path to files or directory")]
     paths: Vec<String>,
 
-    #[arg(short = 'f', help = "force upload without skipping(for special case)")]
+    #[arg(short = 'f', help = "force upload the file")]
     force: bool,
 }
 

@@ -54,7 +54,7 @@ pub async fn process_uploads(
         if logs_contents.contains(&file_path_string) && !force_upload {
             skipped_files_count += 1;
             eprintln!(
-                "{} Skipped, due to file already has been uploaded.",
+                "{} Skipped, due to file already has been uploaded. use '-f' flag",
                 file_info.name
             );
             continue;
@@ -101,26 +101,22 @@ pub async fn process_uploads(
 }
 
 fn get_file_info(file_path: &PathBuf) -> FileInfo {
-    let basename = Command::new("basename")
-        .arg(&file_path)
-        .output()
-        .expect("basename command failed to start");
-    let name = str::from_utf8(&basename.stdout).unwrap().trim().to_string();
+    let name = file_path
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
 
-    let get_size = Command::new("stat")
-        .arg("-c%s")
-        .arg(&file_path)
-        .output()
-        .expect("size command failed to start");
-    let str_size = str::from_utf8(&get_size.stdout).unwrap().trim();
-    let size: u64 = str_size.parse().unwrap();
+    let size: u64 = fs::metadata(&file_path)
+        .expect("Failed to read file metadata")
+        .len();
 
     let mimetype_stdout = Command::new("file")
         .arg("--mime-type")
         .arg("-b")
         .arg(&file_path)
         .output()
-        .expect("size command failed to start");
+        .expect("file command failed to ran");
+
     let mime_type = str::from_utf8(&mimetype_stdout.stdout)
         .expect("invalid UTF-8 in `file` output")
         .trim()
